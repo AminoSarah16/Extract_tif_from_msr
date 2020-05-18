@@ -4,15 +4,16 @@ import os
 from PIL import Image
 import scipy.ndimage as ndimage
 
-
+#TODO: open the previous images automatically and cut the last two measurements - specpy..?
 
 NAME_PART = "STED"
 
 def main():
-    root_path = r"C:\Users\Sarah\Documents\Python\Bax-analysis\IF36_selected-for-analysis-with-Jan"  # r stands for raw. So that it doesn't read the stupid windows way of filepaths with backslashes wrong.
-    output_path = r"C:\Users\Sarah\Documents\Python\Extract_tif_from_msr"
+    #TODO: do the same with ini file what Jan did
+    root_path = r"P:\Private\practice\imaging\Image-processing\Freiburg_analysis\IF41_replicate3"  # r stands for raw. So that it doesn't read the stupid windows way of filepaths with backslashes wrong.
+    # output_path = r"C:\Users\Sarah\Documents\Python\Extract_tif_from_msr"
     filenames = list(os.listdir(root_path))
-    result_path = os.path.join(output_path, 'results')
+    result_path = os.path.join(root_path, 'results')
     if not os.path.isdir(result_path):
         os.makedirs(result_path)
     for filename in filenames:  # ich erstelle eine Liste mit den Filenames in dem Ordner
@@ -87,7 +88,7 @@ def make_image_from_imspector_stack(wanted_stack_s, result_path, filename):
         print("And the following greyvalue range: {} - {}".format(str(minimum_gray), str(maximum_gray)))
         factor = 255 /maximum_gray
         print(factor)
-        enhanced_contrast = denoised_data * factor * 5
+        enhanced_contrast = denoised_data * factor * 5  #TODO: decompose and set a different factor for Bax and mito channels
         thresh = 255
         super_threshold_indices = enhanced_contrast > thresh
         enhanced_contrast[super_threshold_indices] = 255
