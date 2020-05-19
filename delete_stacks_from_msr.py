@@ -5,26 +5,39 @@ from PIL import Image
 import scipy.ndimage as ndimage
 import configparser
 
-#TODO: open the previous images automatically and cut the last two measurements - specpy..?
+# work around for the fact that sometimes I duplicated the STED channels during imaging and they are saved in the measurement but ImSpector forgot the name.
+EMPTY = " "
+STED = "STED"
+# falls der stack dann immer noch größer 2 ist wird der Rest einfach gepoppt und zwar:
+# in der read_stack_from_imspector_measurement function in der Liste wanted_stack
 
-NAME_PART = "STED"
 
 def main():
     root_path = get_root_path()  # r stands for raw. So that it doesn't read the stupid windows way of filepaths with backslashes wrong.
-    # output_path = r"C:\Users\Sarah\Documents\Python\Extract_tif_from_msr"
-    result_path = os.path.join(root_path, 'results_Sarah')
+    result_path = os.path.join(root_path, 'results_del_duplicates_Sarah')
     if not os.path.isdir(result_path):
         os.makedirs(result_path)
-    filenames = list(os.listdir(root_path))
-    for filename in filenames:  # ich erstelle eine Liste mit den Filenames in dem Ordner
-        if filename.endswith(".msr"):  # wenn die Endung .msr ist, dann mach was damit, nämlich:
-            print(filename)
-            file_path = os.path.join(root_path, filename)
-            wanted_stack_s = read_stack_from_imspector_measurement(file_path)
-            images = make_image_from_imspector_stack(wanted_stack_s)
-            save_array_with_pillow(images, result_path, filename, wanted_stack_s)
-            print("main-end")
-            break
+    # filenames = list(os.listdir(root_path))
+    # for filename in filenames:  # ich erstelle eine Liste mit den Filenames in dem Ordner
+    #     if filename.endswith(".msr"):  # wenn die Endung .msr ist, dann mach was damit, nämlich:
+    # filename = "IF36_spl15_U2OS-DKO_pcDNA-Bax-wt_6hEx_14hAct_cytC-AF488_Tom20-AF594_Bax-SR_cl8_ringheaven.msr"
+    filename = "IF36_spl21_U2OS-DKO_pcDNA-Bax-H5i_6hEx_14hAct_cytC-AF488_Tom20-AF594_Bax-SR_cl6-7_dotty-andbigdots.msr"
+    print(filename)
+    file_path = os.path.join(root_path, filename)
+    stacks = read_stack_from_imspector_measurement(file_path)
+    images = make_image_from_imspector_stack(stacks)
+    for i in range(len(images)):
+        image = images[i]  # ich kann nicht schreiben
+        if i == 0:
+            extra_factor = 2.5  # für mito contrast
+        elif i == 1:
+            extra_factor = 5
+        elif i > 1:
+            images.pop(i)
+        print(extra_factor)  #TODO. decompose
+        enhance_contrast(image, extra_factor)
+        # TODO: save und put in loop
+    # break
 
 
 def get_root_path():
@@ -57,10 +70,13 @@ def read_stack_from_imspector_measurement(file_path):
         all_stacks.append(stack)
     print('The measurement contains {} channels.'.format(len(all_stacks)))  # gibt mir aus wie viele Kanäle die Messung hat
 
-    # finde alle stacks, deren name name_part enthält
-    wanted_stack_s = [stack for stack in all_stacks if NAME_PART in stack.name()]  # list comprehension(?)  #stack.name() ist von specpy
-    print('The measurement contains {} {} channels.'.format(len(wanted_stack_s), NAME_PART))
-
+    # finde alle stacks, deren name entweder das Wort STED enthält, oder welcher keine spaces (EMPTY) enthält, das kann dann nur der leere sein.
+    # die CONSTANTS dafür sind oben vor der main() definiert = workaround für channel duplication.
+    wanted_stack_s = [stack for stack in all_stacks if EMPTY not in stack.name() or STED in stack.name()]  # list comprehension(?)  #stack.name() ist von specpy
+    print('The measurement contains {} STED channels.'.format(len(wanted_stack_s)))
+    for i in range(len(wanted_stack_s)):
+        if i > 1:
+            wanted_stack_s.pop(i)
     return wanted_stack_s
 
 
@@ -91,16 +107,7 @@ def make_image_from_imspector_stack(wanted_stack_s):
         size = data.shape
         print('The numpy array of the {} channel has the following dimensions: {}'.format(wanted_stack.name(), size))
 
-        #Gaussian blur with scipy package
-        denoised_data = ndimage.gaussian_filter(data, sigma=2)
-
-        if "594" in wanted_stack.name():
-            extra_factor = 2.5  # für mito contrast
-        elif "STAR RED" in wanted_stack.name():
-            extra_factor = 5  # für Bax contrast  # TODO: get out of this function, into enhanced contrast, need to build in loop into enhanced contrast. or main?
-        enhanced_contrast = enhance_contrast(denoised_data, extra_factor)
-
-        images.append(enhanced_contrast)
+        images.append(data)
 
     return images
 
@@ -112,23 +119,19 @@ def enhance_contrast(numpy_array, random_extra_factor):
     print("And the following greyvalue range: {} - {}".format(str(minimum_gray), str(maximum_gray)))
     factor = 255 / maximum_gray
     print(factor)
-    enhanced_contrast = numpy_array * factor * random_extra_factor  # TODO: set a different factor for Bax and mito channels
+    enhanced_contrast = numpy_array * factor * random_extra_factor  # depends on the position of the measurement in the stack
     thresh = 255
     super_threshold_indices = enhanced_contrast > thresh  # ich suche mir die Indices im Array, die über dem Threshold liegen
     enhanced_contrast[super_threshold_indices] = 255  # und setze die Intensitäten an diesen Stellen auf 255
     return enhanced_contrast
 
 
-def save_array_with_pillow(images, result_path, filename, wanted_stack_s):
-    # I need to change the type of the numpy array to unsigned integer, otherwise can't be saved as tiff.
-    # unit8 = Unsigned integer (0 to 255); unit32 = Unsigned integer (0 to 4294967295)
-    for i in range(len(images)):
-        image = images[i]  # ich kann nicht schreiben for image in images, weil ich den counter i brauche für später
-        eight_bit_array = image.astype(numpy.uint8)
-        output_file = os.path.join(result_path, filename[:-4] + wanted_stack_s[i].name() + '.jpg')  # nämlich für den stackname hier
-        # print("wanted stack : {}".format(wanted_stack_s[i].name()))
-        img = Image.fromarray(eight_bit_array)
-        img.save(output_file, format='jpeg')
+# def determine_extra_factor(stack):
+#     if stack[0]:
+#         extra_factor = 2.5  # für mito contrast
+#     elif stack[1]:
+#         extra_factor = 5  # für Bax contrast  # TODO: get this function, into enhanced contrast, need to build in loop into enhanced contrast. or main?
+#     return extra_factor
 
 
 if __name__ == '__main__':
