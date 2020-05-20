@@ -12,11 +12,12 @@ CH2 = "Ch2 {2}"  # auf der alten Waldweg software hab ich das meist als af594 Ka
 CH4 = "Ch4 {2}"
 # falls der stack dann immer noch größer 2 ist wird der Rest einfach gepoppt und zwar:
 # in der read_stack_from_imspector_measurement function in der Liste wanted_stack
-
+#TODO: make work for subdirectories, make continue loop even if one stack doesn't work
 
 def main():
-    root_path = get_root_path()  # r stands for raw. So that it doesn't read the stupid windows way of filepaths with backslashes wrong.
-    result_path = os.path.join(root_path, 'results_del_duplicates_Sarah')
+    # root_path = r"P:\Private\practice\imaging\IF\selected\IFs_Freiburg_replicates\01_U2OS_DKO_plus_Bax_wt" # r stands for raw. So that it doesn't read the stupid windows way of filepaths with backslashes wrong.
+    root_path = get_root_path()
+    result_path = os.path.join(root_path, 'extracted_tifs_from_msr')
     if not os.path.isdir(result_path):
         os.makedirs(result_path)
     filenames = list(os.listdir(root_path))
@@ -35,7 +36,7 @@ def main():
             for i in range(len(images)):
                 image = images[i]
                 stackname = stack_names[i]
-                extra_factor = determine_extra_factor(images)
+                extra_factor = determine_extra_factor(i)
 
                 denoised_data = gaussian_blur(image)
                 enhanced_contrast = enhance_contrast(denoised_data, extra_factor)
@@ -44,8 +45,6 @@ def main():
                 save_array_with_pillow(image, result_path, filename, stackname + str(i))
                 # save the denoised and contrast enhanced
                 save_array_with_pillow(enhanced_contrast, result_path, filename, stackname + str(i) + "contr_enh")
-
-        # break
 
 
 def get_root_path():
@@ -126,18 +125,18 @@ def make_image_from_imspector_stack(wanted_stack_s):
     return images, stacknames
 
 
-def determine_extra_factor(images):
+def determine_extra_factor(i):
     '''
     the stack we extract from the imspector measurement should only have 2 objects, and the first one is AF594 and the second one star red.
     As long as Bax has been imaged in Starred, then these factors will suit more or less.
     '''
-    for i in range(len(images)):
-        if i == 0:
-            extra_factor = 2.5  # applied to AF594 channel (hier für mito contrast)
-        elif i == 1:
-            extra_factor = 5  # applied to starred channel (hier für Bax contrast)
-        print(extra_factor)
-        return extra_factor
+    #activate thisTODO if needed: Achtung es ist grade verdreht, weil ich ein sample set bearbeitet habe, wo bax im 594er Kanal liegt
+    if i == 0:
+        extra_factor = 2.5  # applied to AF594 channel (hier für mito contrast)
+    elif i == 1:
+        extra_factor = 5  # applied to starred channel (hier für Bax contrast)
+    print(extra_factor)
+    return extra_factor
 
 
 def gaussian_blur(numpy_array):
@@ -150,8 +149,10 @@ def enhance_contrast(numpy_array, random_extra_factor):
     # Enhance contrast by stretching the histogram over the full range of the grayvalues
     minimum_gray = numpy.amin(numpy_array)
     maximum_gray = numpy.amax(numpy_array)
-    print("And the following greyvalue range: {} - {}".format(str(minimum_gray), str(maximum_gray)))
-    factor = 255 / maximum_gray
+    mean_gray = numpy.mean(numpy_array)
+    print("And the following greyvalue range: {} - {}, with a mean of: {}.".format(str(minimum_gray), str(maximum_gray), str(mean_gray)))
+    factor = 255/maximum_gray
+    # mean_factor = 127.5 / maximum_gray  # TODO: pick out all the pixels that are not 0 and calculate the mean
     print(factor)
     enhanced_contrast = numpy_array * factor * random_extra_factor  # depends on the position of the measurement in the stack
     thresh = 255
