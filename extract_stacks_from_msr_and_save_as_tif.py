@@ -8,6 +8,8 @@ import configparser
 # work around for the fact that sometimes I duplicated the STED channels during imaging and they are saved in the measurement but ImSpector forgot the name.
 EMPTY = " "
 STED = "STED"
+CH2 = "Ch2 {2}"  # auf der alten Waldweg software hab ich das meist als af594 Kanal gehabt
+CH4 = "Ch4 {2}"
 # falls der stack dann immer noch größer 2 ist wird der Rest einfach gepoppt und zwar:
 # in der read_stack_from_imspector_measurement function in der Liste wanted_stack
 
@@ -17,27 +19,33 @@ def main():
     result_path = os.path.join(root_path, 'results_del_duplicates_Sarah')
     if not os.path.isdir(result_path):
         os.makedirs(result_path)
-    # filenames = list(os.listdir(root_path))
-    # for filename in filenames:  # ich erstelle eine Liste mit den Filenames in dem Ordner
-    #     if filename.endswith(".msr"):  # wenn die Endung .msr ist, dann mach was damit, nämlich:
-    # filename = "IF36_spl15_U2OS-DKO_pcDNA-Bax-wt_6hEx_14hAct_cytC-AF488_Tom20-AF594_Bax-SR_cl8_ringheaven.msr"
-    filename = "IF36_spl21_U2OS-DKO_pcDNA-Bax-H5i_6hEx_14hAct_cytC-AF488_Tom20-AF594_Bax-SR_cl6-7_dotty-andbigdots.msr"
-    print(filename)
-    file_path = os.path.join(root_path, filename)
-    stacks = read_stack_from_imspector_measurement(file_path)
-    images = make_image_from_imspector_stack(stacks)
-    for i in range(len(images)):
-        image = images[i]  # ich kann nicht schreiben
-        if i == 0:
-            extra_factor = 2.5  # für mito contrast
-        elif i == 1:
-            extra_factor = 5
-        elif i > 1:
-            images.pop(i)
-        print(extra_factor)  #TODO. decompose
-        enhance_contrast(image, extra_factor)
-        # TODO: save und put in loop
-    # break
+    filenames = list(os.listdir(root_path))
+    for filename in filenames:  # ich erstelle eine Liste mit den Filenames in dem Ordner
+        if filename.endswith(".msr"):  # wenn die Endung .msr ist, dann mach was damit, nämlich:
+    # ATTENTION: the following file name is too long and it will give an error like: FileNotFoundError: [Errno 2] No such file or directory:
+    # all of these need to be shortened.
+    # filename = "IF41.2_spl6_U2OS-DKO_pcDNA-Bax-BH3i_6hEx_14hAct_cytC-M394-AF488_Tom20-M440-AF594_Bax-M482-SR_cl2_Bax-blobs_cytoBax_cytC-release.msr"
+            print(filename)
+            file_path = os.path.join(root_path, filename)
+            stacks = read_stack_from_imspector_measurement(file_path)
+            images, stack_names = make_image_from_imspector_stack(stacks)
+            if len(images) != 2:
+                print('Problem: {} ImSpector stacks, need two.'.format(len(images)))
+                return
+            for i in range(len(images)):
+                image = images[i]
+                stackname = stack_names[i]
+                extra_factor = determine_extra_factor(images)
+
+                denoised_data = gaussian_blur(image)
+                enhanced_contrast = enhance_contrast(denoised_data, extra_factor)
+
+                # save the original
+                save_array_with_pillow(image, result_path, filename, stackname + str(i))
+                # save the denoised and contrast enhanced
+                save_array_with_pillow(enhanced_contrast, result_path, filename, stackname + str(i) + "contr_enh")
+
+        # break
 
 
 def get_root_path():
@@ -45,7 +53,7 @@ def get_root_path():
     Retrieves the root path
     """
     config = configparser.ConfigParser()
-    config.read('extract_tif_from_msr.ini')  # wenn es ein Verzeichnis höher liegen würde wäre es ("../hbujbk")
+    config.read('extract_stacks_from_msr_and_save_as_tif.ini')  # wenn es ein Verzeichnis höher liegen würde wäre es ("../hbujbk")
     return config['general']['root-path']
 
 
@@ -70,13 +78,16 @@ def read_stack_from_imspector_measurement(file_path):
         all_stacks.append(stack)
     print('The measurement contains {} channels.'.format(len(all_stacks)))  # gibt mir aus wie viele Kanäle die Messung hat
 
-    # finde alle stacks, deren name entweder das Wort STED enthält, oder welcher keine spaces (EMPTY) enthält, das kann dann nur der leere sein.
-    # die CONSTANTS dafür sind oben vor der main() definiert = workaround für channel duplication.
-    wanted_stack_s = [stack for stack in all_stacks if EMPTY not in stack.name() or STED in stack.name()]  # list comprehension(?)  #stack.name() ist von specpy
+    # finde alle stacks, deren name entweder das Wort STED enthält, oder welcher keine spaces (EMPTY) enthält, das kann dann nur der leere (=duplizierte) sein.
+    # die CONSTANTS dafür sind oben vor der main() definiert = workaround für channel duplication und bescheuerte ImSpector Benennungen..
+    wanted_stack_s = [stack for stack in all_stacks if EMPTY not in stack.name() or STED in stack.name() or CH2 in stack.name() or CH4 in stack.name()]  # list comprehension(?)  #stack.name() ist von specpy
     print('The measurement contains {} STED channels.'.format(len(wanted_stack_s)))
+
+    # if we get more than 2 stacks (one AF594 and one STAR RED) then it's most likely duplicates and we will just remove them from the list
     for i in range(len(wanted_stack_s)):
         if i > 1:
-            wanted_stack_s.pop(i)
+            wanted_stack_s.pop()
+
     return wanted_stack_s
 
 
@@ -88,8 +99,10 @@ def make_image_from_imspector_stack(wanted_stack_s):
     """
     stack_size = len(wanted_stack_s)
     images = []  # die leere Liste wo ich meine Ergebnissbilder reinspeichere
+    stacknames = []  #TODO. make dictionary??
     for i in range(stack_size):  # TODO: diese for loop in die main und ab data= erst hier lassen
         wanted_stack = wanted_stack_s[i]  # muss ein Element aus der Liste rausfangen, damit ich es in ein numpy array umwandeln kann.
+        stack_name = wanted_stack_s[i].name()
         data = wanted_stack.data()  # returns the data of the stack as a NumPy array
 
         # Dimensionnen von Imspector aus sind [1,1,Ny,Nx]
@@ -108,8 +121,29 @@ def make_image_from_imspector_stack(wanted_stack_s):
         print('The numpy array of the {} channel has the following dimensions: {}'.format(wanted_stack.name(), size))
 
         images.append(data)
+        stacknames.append(stack_name)
 
-    return images
+    return images, stacknames
+
+
+def determine_extra_factor(images):
+    '''
+    the stack we extract from the imspector measurement should only have 2 objects, and the first one is AF594 and the second one star red.
+    As long as Bax has been imaged in Starred, then these factors will suit more or less.
+    '''
+    for i in range(len(images)):
+        if i == 0:
+            extra_factor = 2.5  # applied to AF594 channel (hier für mito contrast)
+        elif i == 1:
+            extra_factor = 5  # applied to starred channel (hier für Bax contrast)
+        print(extra_factor)
+        return extra_factor
+
+
+def gaussian_blur(numpy_array):
+    #Gaussian blur with scipy package
+    denoised_data = ndimage.gaussian_filter(numpy_array, sigma=2)
+    return denoised_data
 
 
 def enhance_contrast(numpy_array, random_extra_factor):
@@ -126,12 +160,15 @@ def enhance_contrast(numpy_array, random_extra_factor):
     return enhanced_contrast
 
 
-# def determine_extra_factor(stack):
-#     if stack[0]:
-#         extra_factor = 2.5  # für mito contrast
-#     elif stack[1]:
-#         extra_factor = 5  # für Bax contrast  # TODO: get this function, into enhanced contrast, need to build in loop into enhanced contrast. or main?
-#     return extra_factor
+def save_array_with_pillow(image, result_path, filename, stackname):
+    # I need to change the type of the numpy array to unsigned integer, otherwise can't be saved as tiff.
+    # unit8 = Unsigned integer (0 to 255); unit32 = Unsigned integer (0 to 4294967295)
+    eight_bit_array = image.astype(numpy.uint8)
+    output_file = os.path.join(result_path, filename[:-4] + stackname + '.jpg')
+    # print("wanted stack : {}".format(stackname)
+    img = Image.fromarray(eight_bit_array)
+    # print("I will save now")
+    img.save(output_file, format='jpeg')
 
 
 if __name__ == '__main__':
