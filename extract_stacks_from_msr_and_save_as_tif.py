@@ -83,9 +83,9 @@ def read_stack_from_imspector_measurement(file_path):
     print('The measurement contains {} STED channels.'.format(len(wanted_stack_s)))
 
     # if we get more than 2 stacks (one AF594 and one STAR RED) then it's most likely duplicates and we will just remove them from the list
-    for i in range(len(wanted_stack_s)):
-        if i > 1:
-            wanted_stack_s.pop()
+    if len(wanted_stack_s) > 2:
+        wanted_stack_s = wanted_stack_s[:2]
+
 
     return wanted_stack_s
 
@@ -169,7 +169,7 @@ def save_array_with_pillow(image, result_path, filename, stackname):
     # print("wanted stack : {}".format(stackname)
     img = Image.fromarray(eight_bit_array)
     # print("I will save now")
-    img.save(output_file, format='jpeg')
+    img.save(output_file, format='jpeg')  #TODO: save metadata (specifically pixel size for FIJI)
 
 
 if __name__ == '__main__':
