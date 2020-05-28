@@ -86,6 +86,10 @@ def read_stack_from_imspector_measurement(file_path):
     if len(wanted_stack_s) > 2:
         wanted_stack_s = wanted_stack_s[:2]
 
+    #OR: wanted_stack_s[:min(len(wanted_stack_s), 2)]  # this gives back the wanted_stack_s list from the start up until before 2 (so 0 and 1).
+    #However, if the stack is smaller then it should only return up until the length of the list, otherwise we will get an index error.
+    #that's why we need the minimum of the two values. Either length of list or 2.
+
 
     return wanted_stack_s
 
