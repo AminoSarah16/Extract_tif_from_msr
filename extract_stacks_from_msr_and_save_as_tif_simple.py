@@ -20,6 +20,7 @@ def main():
     file_format = ".msr"
     root_path = filedialog.askdirectory()  #prompts user to choose directory. From tkinter
     result_path = os.path.join(root_path, 'extracted_tifs_from_msr')
+    sigma = int(input("Please enter the desired radius for your Gaussian blur:"))
     if not os.path.isdir(result_path):
         os.makedirs(result_path)
     filenames = [filename for filename in sorted(os.listdir(root_path)) if filename.endswith(file_format)]
@@ -39,15 +40,13 @@ def main():
             stackname = stack_names[i]
             extra_factor = determine_extra_factor(i)
 
-            denoised_data = gaussian_blur(image)
+            denoised_data = gaussian_blur(image, sigma)
             enhanced_contrast = enhance_contrast(denoised_data, extra_factor)
-            #
-            #     # save the original
-            #     save_array_with_pillow(image, result_path, filename, stackname + str(i))
-            #     # save the denoised and contrast enhanced
-            #     save_array_with_pillow(enhanced_contrast, result_path, filename, stackname + str(i) + "contr_enh")
 
-
+            # save the original
+            save_array_with_pillow(image, result_path, filename, stackname + str(i))
+            # save the denoised and contrast enhanced
+            save_array_with_pillow(enhanced_contrast, result_path, filename, stackname + str(i) + "contr-enh_Gauss-sigma" + str(sigma))
 
 
 def read_stack_from_imspector_measurement(file_path):
@@ -104,7 +103,7 @@ def make_image_from_imspector_stack(wanted_stack_s):
 
         # wir wollen aber [Nx, Ny]
             # 1) reduce to [Ny, Nx]
-        data = numpy.reshape(data, size[2:])
+        data = numpy.reshape(data, size[2:])  #TODO: make sure it also works for videos!!
 
             # 2) transponieren [Nx, Ny]
         data = numpy.transpose(data)
@@ -126,16 +125,16 @@ def determine_extra_factor(i):
     '''
     #activate thisTODO if needed: Achtung es ist grade verdreht, weil ich ein sample set bearbeitet habe, wo bax im 594er Kanal liegt
     if i == 0:
-        extra_factor = 2.5  # applied to AF594 channel (hier für mito contrast)
+        extra_factor = 1  # applied to first channel
     elif i == 1:
-        extra_factor = 5  # applied to starred channel (hier für Bax contrast)
+        extra_factor = 1  # applied to second channel
     print(extra_factor)
     return extra_factor
 
 
-def gaussian_blur(numpy_array):
+def gaussian_blur(numpy_array, sigma):
     #Gaussian blur with scipy package
-    denoised_data = ndimage.gaussian_filter(numpy_array, sigma=2)
+    denoised_data = ndimage.gaussian_filter(numpy_array, sigma=sigma)
     return denoised_data
 
 
@@ -159,11 +158,11 @@ def save_array_with_pillow(image, result_path, filename, stackname):
     # I need to change the type of the numpy array to unsigned integer, otherwise can't be saved as tiff.
     # unit8 = Unsigned integer (0 to 255); unit32 = Unsigned integer (0 to 4294967295)
     eight_bit_array = image.astype(numpy.uint8)
-    output_file = os.path.join(result_path, filename[:-4] + stackname + '.jpg')
+    output_file = os.path.join(result_path, filename[:-4] + stackname + '.tiff')
     # print("wanted stack : {}".format(stackname)
     img = Image.fromarray(eight_bit_array)
     # print("I will save now")
-    img.save(output_file, format='jpeg')
+    img.save(output_file, format='tiff')
 
 
 if __name__ == '__main__':
