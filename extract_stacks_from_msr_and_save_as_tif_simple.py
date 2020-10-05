@@ -14,9 +14,10 @@ CH2 = "Ch2 {2}"  # auf der alten Waldweg software hab ich das meist als af594 Ka
 CH4 = "Ch4 {2}"
 # falls der stack dann immer noch größer 2 ist wird der Rest einfach gepoppt und zwar:
 # in der read_stack_from_imspector_measurement function in der Liste wanted_stack
-#TODO: make work for subdirectories, make continue loop even if one stack doesn't work
+
 
 def main():
+    not_handled = []
     file_format = ".msr"
     root_path = filedialog.askdirectory()  #prompts user to choose directory. From tkinter
     result_path = os.path.join(root_path, 'extracted_tifs_from_msr')
@@ -27,26 +28,35 @@ def main():
     if not filenames:  # pythonic for if a list is empty
         print("There are no files with this format.")
     for filename in filenames:
-        print(filename)
-        file_path = os.path.join(root_path, filename)
-        stacks = read_stack_from_imspector_measurement(file_path)
-        images, stack_names = make_image_from_imspector_stack(stacks)
-        if len(images) != 2:
-            print('Problem: {} ImSpector stacks, need two.'.format(len(images)))
-            return  ##This is used for the same reason as break in loops. The return value doesn't matter and you
-            # only want to exit the whole function. It's extremely useful in some places, even though you don't need it that often.
-        for i in range(len(images)):
-            image = images[i]
-            stackname = stack_names[i]
-            extra_factor = determine_extra_factor(i)
+        try:
+            print(filename)
+            file_path = os.path.join(root_path, filename)
+            stacks = read_stack_from_imspector_measurement(file_path)
+            images, stack_names = make_image_from_imspector_stack(stacks)
+            if len(images) != 2:
+                print('Problem: {} ImSpector stacks, need two.'.format(len(images)))
+                return  ##This is used for the same reason as break in loops. The return value doesn't matter and you
+                # only want to exit the whole function. It's extremely useful in some places, even though you don't need it that often.
+            for i in range(len(images)):
+                image = images[i]
+                stackname = stack_names[i]
+                extra_factor = determine_extra_factor(i)
 
-            denoised_data = gaussian_blur(image, sigma)
-            enhanced_contrast = enhance_contrast(denoised_data, extra_factor)
+                denoised_data = gaussian_blur(image, sigma)
+                enhanced_contrast = enhance_contrast(denoised_data, extra_factor)
 
-            # save the original
-            save_array_with_pillow(image, result_path, filename, stackname + str(i))
-            # save the denoised and contrast enhanced
-            save_array_with_pillow(enhanced_contrast, result_path, filename, stackname + str(i) + "contr-enh_Gauss-sigma" + str(sigma))
+                # save the original
+                save_array_with_pillow(image, result_path, filename, stackname + str(i))
+                # save the denoised and contrast enhanced
+                save_array_with_pillow(enhanced_contrast, result_path, filename, stackname + str(i) + "contr-enh_Gauss-sigma" + str(sigma))
+        except ValueError: #falls ein Stack nicht dem 2D Format entspricht, dann soll er einfach mit den anderen weitermachen
+            not_handled.append(filename)
+            pass
+
+    if not not_handled:  # pythonic for if a list is empty
+        print("All files were handled successfully.")
+    else:
+        print("These files could not be handled: " + str(not_handled))
 
 
 def read_stack_from_imspector_measurement(file_path):
@@ -91,8 +101,8 @@ def make_image_from_imspector_stack(wanted_stack_s):
     """
     stack_size = len(wanted_stack_s)
     images = []  # die leere Liste wo ich meine Ergebnissbilder reinspeichere
-    stacknames = []  #TODO. make dictionary??
-    for i in range(stack_size):  # TODO: diese for loop in die main und ab data= erst hier lassen
+    stacknames = []
+    for i in range(stack_size):
         wanted_stack = wanted_stack_s[i]  # muss ein Element aus der Liste rausfangen, damit ich es in ein numpy array umwandeln kann.
         stack_name = wanted_stack_s[i].name()
         data = wanted_stack.data()  # returns the data of the stack as a NumPy array
@@ -103,10 +113,10 @@ def make_image_from_imspector_stack(wanted_stack_s):
 
         # wir wollen aber [Nx, Ny]
             # 1) reduce to [Ny, Nx]
-        data = numpy.reshape(data, size[2:])  #TODO: make sure it also works for videos!!
+        data = numpy.reshape(data, size[2:])  #TODO: make sure it also works for videos or stacks
 
-            # 2) transponieren [Nx, Ny]
-        data = numpy.transpose(data)
+            # 2) transponieren [Nx, Ny]  ##for some reason, this is now not true anymore (5.10.20)
+        # data = numpy.transpose(data)
 
             # 3) just to visualize the dimensions again
         size = data.shape
@@ -145,7 +155,7 @@ def enhance_contrast(numpy_array, random_extra_factor):
     mean_gray = numpy.mean(numpy_array)
     print("The channel has the following greyvalue range: {} - {}, with a mean of: {}.".format(str(minimum_gray), str(maximum_gray), str(mean_gray)))
     factor = 255/maximum_gray
-    # mean_factor = 127.5 / maximum_gray  # TODO: pick out all the pixels that are not 0 and calculate the mean
+    # mean_factor = 127.5 / maximum_gray
     print(factor)
     enhanced_contrast = numpy_array * factor * random_extra_factor  # depends on the position of the measurement in the stack
     thresh = 255
