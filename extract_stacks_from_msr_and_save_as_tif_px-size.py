@@ -7,14 +7,11 @@ import configparser
 from tkinter import filedialog
 
 # work around for the fact that sometimes I duplicated the STED channels during imaging and they are saved in the measurement but ImSpector forgot the name.
+# and also that ImSpector adds "stacks" when you draw a line profile
 
-EMPTY = " "
-STED = "STED"
-CH2 = "Ch2 {2}"  # auf der alten Waldweg software hab ich das meist als af594 Kanal gehabt
-CH4 = "Ch4 {2}"
-line_profiles = "[Pop]"
-# falls der stack dann immer noch größer 2 ist wird der Rest einfach gepoppt und zwar:
-# in der read_stack_from_imspector_measurement function in der Liste wanted_stack
+LENGTH_FACTOR = 1e+9 #from meters to nanometers
+pop = '[Pop]'  ##how ImSpector names the line profile popup windows
+
 
 
 def main():
@@ -32,12 +29,8 @@ def main():
         try:
             print(filename)
             file_path = os.path.join(root_path, filename)
-            stacks = read_stack_from_imspector_measurement(file_path)
+            stacks = read_channels_from_imspector_measurement(file_path)
             images, stack_names = make_image_from_imspector_stack(stacks)
-            # if len(images) != 2:
-            #     print('Problem: {} ImSpector stacks, need two.'.format(len(images)))
-            #     return  ##This is used for the same reason as break in loops. The return value doesn't matter and you
-            #     # only want to exit the whole function. It's extremely useful in some places, even though you don't need it that often.
             for i in range(len(images)):
                 image = images[i]
                 stackname = stack_names[i]
@@ -60,13 +53,10 @@ def main():
         print("These files could not be handled: " + str(not_handled))
 
 
-def read_stack_from_imspector_measurement(file_path):
+def read_channels_from_imspector_measurement(file_path):
     """
-    Lädt die Imspector Messung und findet die Kanäle (=stacks) die wir mit namepart sepzifizieren.
+    Lädt die Imspector Messung und findet die Kanäle (=channels) die wir über die pixel size sepzifizieren.
 
-    :param file_path: Pfad der Imspector Messung.
-    :param name_part: Teil des Stacknamens
-    :return: Alles Kanäla (=Stacks), die so heißen
     """
 
     # File lesen
@@ -74,26 +64,33 @@ def read_stack_from_imspector_measurement(file_path):
 
 
     # lese alle stacks in eine liste
-    all_stacks = []  #empty list
-    number_stacks = measurement.number_of_stacks()  # returns the number of stacks in the measurement
-    for i in range(number_stacks):
-        stack = measurement.read(i)  #ein Kanal wird in Imspector als stack bezeichnet!
-        all_stacks.append(stack)
-    print('The measurement contains {} channels.'.format(len(all_stacks)))  # gibt mir aus wie viele Kanäle die Messung hat
+    all_channels = []
+    names_of_channels = []
+    channels_with_STED_pixel_size = []
+    number_channels = measurement.number_of_stacks()  # returns the number of channels in the measurement (ImSpector calls them Stacks. why? no clue)
+    for i in range(number_channels):
+        one_channel = measurement.read(i)
+        all_channels.append(one_channel)
+        name_of_channel = one_channel.name()
+        names_of_channels.append(name_of_channel)
+        meta_data = one_channel.meta_data()  ##specpy function to access metadata
+        # print(meta_data)
+        pixel_size = meta_data['Pixels'][
+            'PhysicalSizeX']  ##retrieves the pixelsize in meters, accessing the value in a nested dictionnary via 2 keys.
+        pixel_size_in_nm = round(pixel_size * LENGTH_FACTOR)
+        # print(name_of_channel, pixel_size_in_nm)
+        if 10 < pixel_size_in_nm < 25:
+            channels_with_STED_pixel_size.append(
+                one_channel)  ##only picks out the channels where the pixel size lies between these limits
 
-    # finde alle stacks, deren name entweder das Wort STED enthält, oder welcher keine spaces (EMPTY) enthält, das kann dann nur der leere (=duplizierte) sein.
-    # die CONSTANTS dafür sind oben vor der main() definiert = workaround für channel duplication und bescheuerte ImSpector Benennungen..
-    wanted_stack_s1 = [stack for stack in all_stacks if EMPTY not in stack.name() or STED in stack.name() or CH2 in stack.name() or CH4 in stack.name()]  # list comprehension(?)  #stack.name() ist von specpy
-    print('The measurement contains {} STED channels.'.format(len(wanted_stack_s1)))
-    wanted_stack_s = [stack for stack in wanted_stack_s1 if line_profiles not in stack.name()]  ##TODO: line profiles rauskriegen
-    print('The measurement contains {} STED channels.'.format(len(wanted_stack_s)))
+    wanted_channels = [channel for channel in channels_with_STED_pixel_size if pop not in channel.name()]  # ohne die line profile dinger
+    print('The measurement contains {} channels.'.format(
+        len(all_channels)))  # gibt mir aus wie viele Kanäle die Messung hat
+    print('The measurement contains {} channels with STED pixel size.'.format(len(wanted_channels)))
+    for channel in wanted_channels:
+        print(channel.name())
 
-    # if we get more than 2 stacks (one AF594 and one STAR RED) then it's most likely duplicates and we will just remove them from the list
-    for i in range(len(wanted_stack_s)):
-        if i > 1:
-            wanted_stack_s.pop()
-
-    return wanted_stack_s
+    return wanted_channels
 
 
 def make_image_from_imspector_stack(wanted_stack_s):
@@ -131,17 +128,17 @@ def make_image_from_imspector_stack(wanted_stack_s):
     return images, stacknames
 
 
-def determine_extra_factor(i):
+def determine_extra_factor(i):  ##TODO: remove this.
     '''
     the stack we extract from the imspector measurement should only have 2 objects, and the first one is AF594 and the second one star red.
     Here we can choose whether we want to increase the contrast.
     '''
-    #activate thisTODO if needed: Achtung es ist grade verdreht, weil ich ein sample set bearbeitet habe, wo bax im 594er Kanal liegt
-    if i == 0:
-        extra_factor = 1  # applied to first channel
-    elif i == 1:
-        extra_factor = 1  # applied to second channel
-    print(extra_factor)
+    #
+    # if i == 0:
+    extra_factor = 1  # applied to first channel
+    # elif i == 1:
+    #     extra_factor = 1  # applied to second channel
+    # print(extra_factor)
     return extra_factor
 
 

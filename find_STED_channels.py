@@ -12,7 +12,7 @@ pixelsize in the metadata of the msr file.
 
 
 def main():
-    file_path = "C:/Users/sschwei/Desktop/test3/IF55a_spl1_U2OS_18hActD_Tom20-M507-AF488_Bax-NT-M99-AF594_Bak-M427-SR_cl1_no-green-laser.msr"
+    file_path = "C:/Users/sschwei/Desktop/test2/IF56_spl21_U2OSwt_17hActD_DAPI_Tom20-M543-AF488_msDNA-M395-AF594_rbBax-NT-M99-SR_cl8-10_rings-release-vs-non-apo_.msr"
     measurement = specpy.File(file_path, specpy.File.Read)
     all_channels = []
     names_of_channels = []
@@ -25,7 +25,7 @@ def main():
         names_of_channels.append(name_of_channel)
         meta_data = one_channel.meta_data()  ##specpy function to access metadata
         # print(meta_data)
-        pixel_size = meta_data['Pixels']['PhysicalSizeX']  ##retrieves the pixelsize in meters
+        pixel_size = meta_data['Pixels']['PhysicalSizeX']  ##retrieves the pixelsize in meters, accessing the value in a nested dictionnary via 2 keys.
         pixel_size_in_nm = round(pixel_size * LENGTH_FACTOR)
         # print(name_of_channel, pixel_size_in_nm)
         if 10 < pixel_size_in_nm < 25:
